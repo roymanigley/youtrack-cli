@@ -1,11 +1,13 @@
 # Youtrack CLI
 > - issue fuzzy search
 > - submits the worked time on a issue to youtrack
+> - create an issue in youtrack
 > - keeps a local worklog for the time tracking
 
 # Featues
--[x]  Issue Fuzzy Search
--[x]  Issue Time Tracking
+-[x] Issue Fuzzy Search
+-[x] Issue Time Tracking
+-[X] Issue Creation
 
 # Setup `~/.zshrc` or `~/.bashrc`
     alias worklog='/home/royman/repo/local/youtrack/main.py -a WORK_IN_PROGRESS'

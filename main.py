@@ -10,7 +10,7 @@ from thefuzz import process
 import math
 
 
-work_log_file = '/tmp/worklog/worklog'
+work_log_file = '/tmp/worklog'
 refresh_rate_seconds = 5
 search_result_limit = 5
 
@@ -19,13 +19,43 @@ class WorkAction(Enum):
     WORK_IN_PROGRESS = 'WORK_IN_PROGRESS'
     SHOW_WORK_LOG = 'SHOW_WORK_LOG'
     CLEAR_WORK_LOG = 'CLEAR_WORK_LOG'
+    CREATE_ISSUE = 'CREATE_ISSUE'
+
+
+def create_issue():
+    choices = YouTrackClient().fetch_projects()
+    while True:
+        query = input('[?] Search Project: ')
+        results = process.extract(
+            query, choices, limit=search_result_limit)
+
+        for index, (match, score) in enumerate(results):
+            print(
+                f"[{index}] {match.shortName} - {match.name} (score: {score})")
+
+        choice = input('[?] Choice: ')
+        if choice.isnumeric() and 0 <= int(choice) < len(results):
+            title = input('[?] Title: ')
+            print('[?] Description:')
+            description = ['']
+            while line := input():
+                description.append(line.encode(
+                    'utf-8', 'ignore').decode('utf-8', 'ignore'))
+            response = YouTrackClient().create_issue(
+                project_id=results[int(choice)][0].id,
+                summary=title,
+                description='\n'.join(description)
+            )
+            if response is None:
+                print('[!] could not save in youtrack')
+            return
 
 
 def work_in_progress():
     choices = YouTrackClient().fetch_issues()
     try:
         while True:
-            query = input('Search: ')
+            query = input('[?] Search Issue: ')
             results = process.extract(
                 query, choices, limit=search_result_limit)
 
@@ -33,8 +63,11 @@ def work_in_progress():
                 print(
                     f"[{index}] {match.idReadable} - {match.summary} (score: {score})")
 
-            choice = input('Choice: ')
-            if choice.isnumeric() and 0 <= int(choice) < len(results):
+            choice = input('[?] Choice or "n" to create a new Issue: ')
+            if choice.lower().strip() in ['new', 'n']:
+                create_issue()
+                choices = YouTrackClient().fetch_issues()
+            elif choice.isnumeric() and 0 <= int(choice) < len(results):
                 ticket: Issue = results[int(choice)][0]
                 print(f'{ticket.idReadable} - {ticket.summary}')
                 time_spent_seconds = 0
@@ -48,7 +81,7 @@ def work_in_progress():
                         minutes = (time_spent_seconds - seconds) // 60
                         current_time = f'{minutes:>02}:{seconds:>02}'
                 except KeyboardInterrupt:
-                    print('\nDescription:')
+                    print('\n[?] Description:')
                     description = ['']
                     while line := input():
                         description.append(line.encode(
