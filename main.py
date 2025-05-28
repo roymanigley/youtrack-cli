@@ -5,7 +5,7 @@ import datetime
 from enum import Enum
 import argparse
 import os
-from youtrack_client import YouTrackClient, Issue
+from youtrack_client import YouTrackClient, Issue, base_url
 from thefuzz import process
 import math
 
@@ -95,13 +95,20 @@ def work_in_progress():
                         f.write(f'{current_time}\n')
                         [f.write(f'{d}\n') for d in description]
                         f.write(f'{separator}\n')
+                    duration_minutes = 5 * round(
+                        math.ceil(time_spent_seconds / 60) / 5
+                    )
                     response = YouTrackClient().add_work_log(
                         issue=ticket,
-                        duration_minutes=math.ceil(time_spent_seconds / 60),
+                        duration_minutes=duration_minutes,
                         text='\n'.join([d for d in description if d])
                     )
                     if response is None:
                         print('[!] could not save in youtrack')
+                    else:
+                        print(
+                            f'{base_url}/issue/{ticket.idReadable}')
+
     except KeyboardInterrupt:
         print('\nBye 🪼')
 
