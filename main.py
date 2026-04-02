@@ -10,9 +10,9 @@ from thefuzz import process
 import math
 
 
-work_log_file = '/tmp/worklog'
+work_log_file = '/home/royman/worklog/worklog'
 refresh_rate_seconds = 5
-search_result_limit = 5
+search_result_limit = 10
 
 
 class WorkAction(Enum):
