@@ -3,6 +3,12 @@
 import time
 import datetime
 import re
+import select
+import subprocess
+import sys
+import tempfile
+import termios
+import tty
 from enum import Enum
 import argparse
 import os
@@ -61,6 +67,61 @@ def format_time(seconds):
     return f"{m:02}:{s:02}"
 
 
+def _timer_display(seconds: int, paused: bool) -> Text:
+    icon = "⏸" if paused else "▶"
+    hint = "Space to resume · Ctrl+C to stop" if paused else "Space to pause · Ctrl+C to stop"
+    style = "bold yellow" if paused else "bold green"
+    t = Text()
+    t.append(f"{icon}  {format_time(seconds)}", style=style)
+    t.append(f"  {hint}", style="dim")
+    return t
+
+
+def run_timer() -> int:
+    """Interactive timer with pause. Space = pause/resume, Ctrl+C = stop. Returns elapsed seconds."""
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    elapsed = 0.0
+    paused = False
+
+    try:
+        tty.setcbreak(fd)
+        last_tick = time.monotonic()
+
+        with Live(console=console, refresh_per_second=4) as live:
+            while True:
+                ready, _, _ = select.select([sys.stdin], [], [], 0.25)
+                if ready:
+                    ch = sys.stdin.read(1)
+                    if ch == ' ':
+                        paused = not paused
+
+                now = time.monotonic()
+                if not paused:
+                    elapsed += now - last_tick
+                last_tick = now
+
+                live.update(_timer_display(int(elapsed), paused))
+    except KeyboardInterrupt:
+        pass
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    return int(elapsed)
+
+
+def open_in_editor() -> str:
+    """Open $EDITOR (default: vim) for description. Returns stripped file contents."""
+    editor = os.environ.get('EDITOR', 'vim')
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        tmp_path = f.name
+    try:
+        subprocess.run([editor, tmp_path], check=False)
+        with open(tmp_path, 'r') as f:
+            return f.read().strip()
+    finally:
+        os.unlink(tmp_path)
+
 
 def create_issue():
     choices = fetch_with_spinner(YouTrackClient().fetch_projects, "Fetching projects...")
@@ -83,15 +144,12 @@ def create_issue():
         return None
 
     title = Prompt.ask("[cyan]Title[/cyan]")
-    console.print("[cyan]Description[/cyan] [dim](empty line to finish)[/dim]")
-    description_lines = []
-    while line := input():
-        description_lines.append(line.encode('utf-8', 'ignore').decode('utf-8', 'ignore'))
+    description = open_in_editor()
 
     response = YouTrackClient().create_issue(
         project_id=project.id,
         summary=title,
-        description='\n'.join(description_lines),
+        description=description,
     )
     if response is None:
         console.print("[red]Failed to create issue in YouTrack[/red]")
@@ -138,23 +196,12 @@ def work_in_progress():
                 title="[green]Working on[/green]",
                 border_style="green",
             ))
-            console.print("[dim]Press Ctrl+C to stop the timer[/dim]\n")
+            console.print("[dim]Space to pause · Ctrl+C to stop[/dim]\n")
 
-            time_spent_seconds = 0
-            try:
-                with Live(console=console, refresh_per_second=2) as live:
-                    while True:
-                        live.update(Text(format_time(time_spent_seconds), style="bold green"))
-                        time.sleep(1)
-                        time_spent_seconds += 1
-            except KeyboardInterrupt:
-                pass
+            time_spent_seconds = run_timer()
 
-            console.print(f"\n[green]Stopped at {format_time(time_spent_seconds)}[/green]")
-            console.print("[cyan]Description[/cyan] [dim](empty line to finish)[/dim]")
-            description_lines = []
-            while line := input():
-                description_lines.append(line.encode('utf-8', 'ignore').decode('utf-8', 'ignore'))
+            console.print(f"[green]Stopped at {format_time(time_spent_seconds)}[/green]")
+            description = open_in_editor()
 
             duration_minutes = 5 * round(math.ceil(time_spent_seconds / 60) / 5)
             duration_minutes = max(duration_minutes, 5)
@@ -162,7 +209,7 @@ def work_in_progress():
             summary_text = (
                 f"[bold]Issue:[/bold]    {ticket.idReadable} — {ticket.summary}\n"
                 f"[bold]Duration:[/bold] {duration_minutes} minutes\n"
-                f"[bold]Note:[/bold]     {' '.join(description_lines) or '[dim](none)[/dim]'}"
+                f"[bold]Note:[/bold]     {description or '[dim](none)[/dim]'}"
             )
             console.print(Panel(summary_text, title="[yellow]Work log summary[/yellow]", border_style="yellow"))
 
@@ -175,14 +222,14 @@ def work_in_progress():
                 f.write(datetime.datetime.now().isoformat() + '\n')
                 f.write(f'{ticket.idReadable} - {ticket.summary}\n')
                 f.write(f'{format_time(time_spent_seconds)}\n')
-                for d in description_lines:
-                    f.write(f'{d}\n')
+                if description:
+                    f.write(description + '\n')
                 f.write(f'{separator}\n')
 
             response = YouTrackClient().add_work_log(
                 issue=ticket,
                 duration_minutes=duration_minutes,
-                text='\n'.join(description_lines),
+                text=description,
             )
             if response is None:
                 console.print("[red]Failed to save in YouTrack[/red]")

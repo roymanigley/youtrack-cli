@@ -65,10 +65,11 @@ class YouTrackClient():
             },
             headers=self.headers
         )
-        if response.status_code == 201:
+        if response.status_code == 200:
             logger.debug('Issue Created: %s', response.text)
-            return
+            return True
         logger.error('failed to create an Issue: %s', response.text)
+        return False
 
     def fetch_issues(self) -> list[Issue]:
         response = requests.get(
