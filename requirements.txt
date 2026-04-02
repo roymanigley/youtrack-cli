@@ -1,1 +1,4 @@
 thefuzz==0.22.1
+requests
+rich
+questionary

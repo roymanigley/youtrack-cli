@@ -65,7 +65,7 @@ class YouTrackClient():
             },
             headers=self.headers
         )
-        if response.status_code == 200:
+        if response.status_code == 201:
             logger.debug('Issue Created: %s', response.text)
             return
         logger.error('failed to create an Issue: %s', response.text)
