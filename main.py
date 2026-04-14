@@ -206,6 +206,21 @@ def work_in_progress():
             duration_minutes = 5 * round(math.ceil(time_spent_seconds / 60) / 5)
             duration_minutes = max(duration_minutes, 5)
 
+            default_duration_str = (
+                f"{duration_minutes // 60}h {duration_minutes % 60}m"
+                if duration_minutes >= 60
+                else f"{duration_minutes}m"
+            )
+            while True:
+                duration_input = Prompt.ask("[cyan]Duration[/cyan]", default=default_duration_str)
+                match = re.fullmatch(r'\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*', duration_input, re.IGNORECASE)
+                if match and (match.group(1) or match.group(2)):
+                    h = int(match.group(1) or 0)
+                    m = int(match.group(2) or 0)
+                    duration_minutes = max(h * 60 + m, 1)
+                    break
+                console.print("[red]Invalid duration. Use format like: 2h 5m, 1h, 30m[/red]")
+
             summary_text = (
                 f"[bold]Issue:[/bold]    {ticket.idReadable} — {ticket.summary}\n"
                 f"[bold]Duration:[/bold] {duration_minutes} minutes\n"
