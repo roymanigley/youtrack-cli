@@ -16,6 +16,8 @@ import math
 
 import questionary
 from questionary import Style as QStyle
+from pydantic_ai import Agent
+from pydantic_ai.models.google import GoogleModel
 
 from youtrack_client import YouTrackClient, Issue, base_url
 from thefuzz import process
@@ -35,6 +37,50 @@ SELECT_STYLE = QStyle([
 ])
 
 console = Console()
+
+_gemini_work_log = Agent(
+    GoogleModel('gemini-2.5-flash-lite'),
+    system_prompt=(
+        "Fix spelling and grammar in the given text. "
+        "adapt it so a non tecnical person understand."
+        "You are generating a worklog entry for an issue. "
+        "Return only the corrected text, no explanations."
+    ),
+)
+_gemini_issue_title = Agent(
+    GoogleModel('gemini-2.5-flash-lite'),
+    system_prompt=(
+        "Fix spelling and grammar in the given text. "
+        "The target audience are software developers. "
+        "You are generating a title for an issue. "
+        "Return only the corrected text, no explanations."
+    ),
+)
+_gemini_issue_description = Agent(
+    GoogleModel('gemini-2.5-flash-lite'),
+    system_prompt=(
+        "Fix spelling and grammar in the given text and "
+        "The target audience are software developers which have to implement this issue "
+        "Return only the corrected text, no explanations."
+    ),
+)
+
+
+def fix_text(text: str, agent: Agent) -> str:
+    if not text:
+        return text
+    result = agent.run_sync(text)
+    return result.output
+
+
+def try_fix_text(text: str, agent: Agent) -> str:
+    try:
+        return fetch_with_spinner(lambda: fix_text(text, agent), "Fixing grammar...")
+    except Exception as e:
+        console.print(
+            f"[yellow]Grammar fix failed ({e}), using original text[/yellow]")
+        return text
+
 
 work_log_file = '/home/royman/worklog/worklog'
 search_result_limit = 10
@@ -124,7 +170,8 @@ def open_in_editor() -> str:
 
 
 def create_issue():
-    choices = fetch_with_spinner(YouTrackClient().fetch_projects, "Fetching projects...")
+    choices = fetch_with_spinner(
+        YouTrackClient().fetch_projects, "Fetching projects...")
     if not choices:
         console.print("[red]Failed to fetch projects[/red]")
         return None
@@ -144,22 +191,31 @@ def create_issue():
         return None
 
     title = Prompt.ask("[cyan]Title[/cyan]")
+    title = try_fix_text(title, _gemini_issue_title)
     description = open_in_editor()
+    description = try_fix_text(description, _gemini_issue_description)
 
-    response = YouTrackClient().create_issue(
+    id, idReadable = YouTrackClient().create_issue(
         project_id=project.id,
         summary=title,
         description=description,
     )
-    if response is None:
+    if idReadable is None:
         console.print("[red]Failed to create issue in YouTrack[/red]")
     else:
         console.print(f"[green]Issue created in {project.shortName}[/green]")
-    return response
+        console.print(Panel(
+            f"{title}\n[dim]{description}[/dim]",
+            title=f"[green][bold]{idReadable}[/bold] — Issue Created[/green]",
+            border_style="green",
+        ))
+
+    return id
 
 
 def work_in_progress():
-    choices = fetch_with_spinner(YouTrackClient().fetch_issues, "Fetching issues...")
+    choices = fetch_with_spinner(
+        YouTrackClient().fetch_issues, "Fetching issues...")
     if not choices:
         console.print("[red]Failed to fetch issues[/red]")
         return
@@ -169,7 +225,8 @@ def work_in_progress():
     try:
         while True:
             query = Prompt.ask("[cyan]Search issue[/cyan]")
-            results = process.extract(query, choices, limit=search_result_limit)
+            results = process.extract(
+                query, choices, limit=search_result_limit)
 
             selected = questionary.select(
                 "Select issue:",
@@ -187,7 +244,8 @@ def work_in_progress():
                 raise KeyboardInterrupt
             if selected == _NEW:
                 create_issue()
-                choices = fetch_with_spinner(YouTrackClient().fetch_issues, "Refreshing issues...")
+                choices = fetch_with_spinner(
+                    YouTrackClient().fetch_issues, "Refreshing issues...")
                 continue
 
             ticket: Issue = selected
@@ -200,10 +258,13 @@ def work_in_progress():
 
             time_spent_seconds = run_timer()
 
-            console.print(f"[green]Stopped at {format_time(time_spent_seconds)}[/green]")
+            console.print(
+                f"[green]Stopped at {format_time(time_spent_seconds)}[/green]")
             description = open_in_editor()
+            description = try_fix_text(description, _gemini_work_log)
 
-            duration_minutes = 5 * round(math.ceil(time_spent_seconds / 60) / 5)
+            duration_minutes = 5 * \
+                round(math.ceil(time_spent_seconds / 60) / 5)
             duration_minutes = max(duration_minutes, 5)
 
             default_duration_str = (
@@ -212,21 +273,25 @@ def work_in_progress():
                 else f"{duration_minutes}m"
             )
             while True:
-                duration_input = Prompt.ask("[cyan]Duration[/cyan]", default=default_duration_str)
-                match = re.fullmatch(r'\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*', duration_input, re.IGNORECASE)
+                duration_input = Prompt.ask(
+                    "[cyan]Duration[/cyan]", default=default_duration_str)
+                match = re.fullmatch(
+                    r'\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*', duration_input, re.IGNORECASE)
                 if match and (match.group(1) or match.group(2)):
                     h = int(match.group(1) or 0)
                     m = int(match.group(2) or 0)
                     duration_minutes = max(h * 60 + m, 1)
                     break
-                console.print("[red]Invalid duration. Use format like: 2h 5m, 1h, 30m[/red]")
+                console.print(
+                    "[red]Invalid duration. Use format like: 2h 5m, 1h, 30m[/red]")
 
             summary_text = (
                 f"[bold]Issue:[/bold]    {ticket.idReadable} — {ticket.summary}\n"
                 f"[bold]Duration:[/bold] {duration_minutes} minutes\n"
                 f"[bold]Note:[/bold]     {description or '[dim](none)[/dim]'}"
             )
-            console.print(Panel(summary_text, title="[yellow]Work log summary[/yellow]", border_style="yellow"))
+            console.print(Panel(
+                summary_text, title="[yellow]Work log summary[/yellow]", border_style="yellow"))
 
             if not Confirm.ask("[cyan]Submit to YouTrack?[/cyan]", default=True):
                 console.print("[yellow]Skipped submission[/yellow]")
@@ -280,7 +345,8 @@ def show_work_log():
         panel_content = f"[bold cyan]{issue_line}[/bold cyan]  [green]{duration}[/green]"
         if notes:
             panel_content += f"\n[dim]{notes}[/dim]"
-        console.print(Panel(panel_content, title=f"[dim]{timestamp}[/dim]", border_style="dim"))
+        console.print(
+            Panel(panel_content, title=f"[dim]{timestamp}[/dim]", border_style="dim"))
 
 
 def clear_work_log():

@@ -55,9 +55,9 @@ class YouTrackClient():
         logger.error('failed to fetch Projects: %s', response.text)
         return None
 
-    def create_issue(self, project_id: str, summary: str, description: str) -> None:
+    def create_issue(self, project_id: str, summary: str, description: str) -> tuple[str | None, str | None]:
         response = requests.post(
-            f'{base_url}/api/issues',
+            f'{base_url}/api/issues?fields=id,idReadable',
             json={
                 'project': {'id': project_id},
                 'summary': summary,
@@ -65,11 +65,12 @@ class YouTrackClient():
             },
             headers=self.headers
         )
+        print(response.json())
         if response.status_code == 200:
             logger.debug('Issue Created: %s', response.text)
-            return True
+            return response.json()['id'], response.json()['idReadable']
         logger.error('failed to create an Issue: %s', response.text)
-        return False
+        return None, None
 
     def fetch_issues(self) -> list[Issue]:
         response = requests.get(
