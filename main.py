@@ -37,9 +37,9 @@ SELECT_STYLE = QStyle([
 ])
 
 console = Console()
-
+_gemini_model = 'gemini-3.1-flash-lite'
 _gemini_work_log = Agent(
-    GoogleModel('gemini-2.5-flash-lite'),
+    GoogleModel(_gemini_model),
     system_prompt=(
         "Fix spelling and grammar in the given text. "
         "adapt it so a non tecnical person understand."
@@ -48,7 +48,7 @@ _gemini_work_log = Agent(
     ),
 )
 _gemini_issue_title = Agent(
-    GoogleModel('gemini-2.5-flash-lite'),
+    GoogleModel(_gemini_model),
     system_prompt=(
         "Fix spelling and grammar in the given text. "
         "The target audience are software developers. "
@@ -57,7 +57,7 @@ _gemini_issue_title = Agent(
     ),
 )
 _gemini_issue_description = Agent(
-    GoogleModel('gemini-2.5-flash-lite'),
+    GoogleModel(_gemini_model),
     system_prompt=(
         "Fix spelling and grammar in the given text and "
         "The target audience are software developers which have to implement this issue "
