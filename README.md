@@ -1,4 +1,4 @@
-# Youtrack CLI
+# Youtrack CLI 🪼
 > - issue fuzzy search
 > - submits the worked time on a issue to youtrack
 > - create an issue in youtrack
